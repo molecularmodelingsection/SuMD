@@ -1,0 +1,773 @@
+#! /usr/bin/env python
+##################################################################################
+##       SUMD v1.2a	                      					##
+## Software Author: A. Cuzzolin, M. Sturlese, V. Salmaso 			##
+## Author: A. Cuzzolin, D. Sabbadin, M. Sturlese			        ##
+##										##
+## update command argument  --> argv-2: 'kill' to kill process and its childs   ##
+## update Kill function --> is now possible to kill process and its childs	##
+## update NX --> the number of consecutive failed to be chosen by the user      ##
+## update Added controller --> block simulation if NX consecutive failed        ##
+##			       generated for the same step			##
+## update Log Writing --> added string type for the block at 31 consecutive	##
+##			  failed						##
+##										##
+##	Previous changes							##
+##	SUMD v1.1a                                                              ##
+## update third-parting calling-back --> added path loading from .SUMDrc        ##
+##                                                                              ##
+##	SUMD v1.0a				 				##
+## update Analysis Section --> moved from the main code into an external app    ##
+## update Log Writing --> removed counter bug on "try" section			##
+## update Plot Data Writing --> removed the overwriting data point              ##
+## update Parameter Selection --> removed bullet stout/stdin selection with a   ##
+## 				  line into "selection.dat"			##
+## update Selection.dat --> removed line for makemovie (obsolete)	        ##
+##################################################################################
+
+# 0.7version (06/07/2016) addition of ligand_cm (in selection.dat and here) (self.lig_cm in sumd_monitor) to select portion of the ligand for center of mass computation;  ligand (in selection.dat and here) (self.lig in sumd_monitor) now identify the whole ligand selection (purpose: fix problems of non-unique resids between protein and peptide)
+# 0.8 version (10/07/2017) addition of non proteic AA
+# opt_dist, bound_dist, meta_dist added
+
+# 11/04/2019 --> addition of Atom Flags (ProDy) to improve chains selection. "main_chain" is the machromolecule in which we define the binding site while "ligand_chain" identify the molecule to be supervised. 
+# 11/04/2019 --> the slope is now computed on all the distances ( and so on all the frames) of the suMD_traj.
+# 11/04/2019 --> slope calculation consider also the distance of the last frame belonging to the previous step, in such way to have a common starting point (n frames + 1)
+
+import os
+import sys  # moduli python os x comunicare con la shell e sys per accettare variabili dati da riga di comando
+
+# import numpy as np
+import subprocess
+from prody import *
+from datetime import datetime
+
+# definizione della main path di suMD. Al momento da editare a mano
+#suMD_path = sys.argv[0].replace('suMD', '')
+suMD_path = os.path.dirname(os.path.abspath(sys.argv[0]))
+
+
+# MODULESPATH=suMD_path+'utility'
+# sys.path.append(MODULESPATH)
+
+# from suMD_monitor_classe import monitor
+
+class monitor:
+    def __init__(self, step, selection):
+        self.selection = selection
+        non_prot_AA = []
+        for line in open(self.selection):
+            colonna = line.split('=')
+            if colonna[0] == 'ligand':
+                self.lig = colonna[1].replace('\n', '')
+            elif colonna[0] == 'main_chain':
+                self.main_ch = colonna[1].replace('\n', '')
+            elif colonna[0] == 'ligand_chain':
+                self.lig_ch = colonna[1].replace('\n', '')
+            elif colonna[0] == 'ligand_cm':
+                self.lig_cm = colonna[1].replace('\n', '')
+            elif colonna[0] == 'resid':
+                self.site = colonna[1].replace('\n', '')
+            elif colonna[0] == 'structure':
+                self.structuref = colonna[1].replace('\n', '')
+            elif colonna[0] == 'n_steps':
+                self.n_steps = colonna[1].replace('\n', '')
+            elif colonna[0] == 'non_prot_AA':
+                non_prot_AA.append(colonna[1].replace('\n', ''))
+
+        for res in non_prot_AA:
+            addNonstdAminoacid(res)
+
+        addNonstdAminoacid("HIE")
+        addNonstdAminoacid("HID")
+        addNonstdAminoacid("HIP")
+        addNonstdAminoacid("HSE")
+        addNonstdAminoacid("HSD")
+        addNonstdAminoacid("HSP")
+
+
+
+        wordList = ['ATOM', 'HETATM']
+        text = f=open(self.structuref, 'r').read()
+        #return sum([ text.split().count(w) for w in wordList])
+        ag = AtomGroup()
+        ag.setBetas([0.]*sum([ text.split().count(w) for w in wordList]))
+	#structure = parsePDB(sys.argv[1], ag=ag)
+
+        self.structure = parsePDB(self.structuref,ag=ag)
+        self.step = step
+
+
+    def distance_pdb(self, fdistance):
+        binding_site = self.structure.select("{} and resid {} and not ({}) and not water".format(str(self.main_ch),(self.site), self.lig))
+        lig_cm_sel = self.structure.select("{} and ({})".format(str(self.lig_ch), self.lig_cm))
+        binding_center = calcCenter(binding_site)
+        lig_center = calcCenter(lig_cm_sel)
+        cm_dist0 = calcDistance(binding_center, lig_center)
+        out_file = open(fdistance, "w")
+        out_file.write(str(cm_dist0))
+        out_file.write("\n")
+        return out_file
+
+    def distance_dat(self, prev_distance, fdistance):
+        os.system('tail -1 {} > {}'.format(prev_distance, fdistance))
+        out_file = open(fdistance, "a")
+        return out_file
+
+    def distance_dcd(self, fdcd, out_file):
+        dcd = DCDFile(fdcd)
+        repr(dcd)
+        dcd.setCoords(self.structure)
+        dcd.link(self.structure)
+        dcd.reset()
+        # loop over all frames in dcd
+
+        for i, frame in enumerate(dcd):
+            n_frame = dcd.nextIndex()
+            a = frame.getAtoms()
+            c = frame.getCoords()
+            n_frame = dcd.nextIndex()
+            ##if n_frame % (int(self.n_steps) / 4000) == 0: commentato per fare il fitting su tutti i punti 
+                # define selection, centers of mass, and distances
+            binding_site = a.select("{} and resid {} and not ({}) and not water".format(str(self.main_ch),(self.site), self.lig))
+            lig_cm_sel = a.select("{} and ({})".format(str(self.lig_ch), self.lig_cm))
+            binding_center = calcCenter(binding_site)
+            lig_center = calcCenter(lig_cm_sel)
+                # print prot_center
+            cm_dist = calcDistance(binding_center, lig_center)
+            out_file.write(str(cm_dist))
+            out_file.write("\n")
+        out_file.close()
+
+    def ANA(self, fdcd, fase):
+        if fase == 'randomized':
+            self.distance_dcd(fdcd, self.distance_pdb('Distance-random.dat'))
+        elif fase == 'attempting':
+            if os.path.isfile("Distance-random.dat"):
+                self.distance_dcd(fdcd, self.distance_dat("Distance-random.dat", "Distance-step1.dat"))
+            else:
+                self.distance_dcd(fdcd, self.distance_pdb("Distance-step1.dat"))
+        else:
+            self.distance_dcd(fdcd, self.distance_dat("Distance-step%s.dat" % self.step,
+                                                      "Distance-step%s.dat" % (self.step + 1)))
+
+
+# Definizione di colore di testo. In questo caso e' colore rosso da usare nei warning
+colorred = "\033[01;31m{0}\033[00m"
+highgreen = "\033[01;42m{0}\033[00m"
+bold = "\033[4m{0}\033[0m"
+
+header = '''
+###############################################################################
+##                                                                           ##
+##                           _____       __  _______                         ##
+##          ____  ___  ____ / ___/__  __/  |/  / __ \                        ##
+##         / __ \/ _ \/ __ \\__ \/ / / / /|_/ / / / /                        ##
+##        / /_/ /  __/ /_/ /__/ / /_/ / /  / / /_/ /                         ##
+##       / .___/\___/ .___/____/\__,_/_/  /_/_____/                          ##
+##      /_/        /_/                                                       ##
+##                                                                           ##
+##                               Version 0.9                                 ##
+##                                                                           ##
+##             Authors: V.Salmaso, M. Sturlese, A.Cuzzolon, S. Moro          ##
+##                                                                           ##
+###############################################################################
+'''
+
+
+# inizializzazione della classe suMD. E' come avere un capo che gestisce i vari compiti che vengono richiamati come segue su.funzione (di al capo che funzione esegua i compiti)
+class suMD:
+
+    # funzione che si attiva al momento del lancio dello script senza che sia chiamata esplicitamente
+    def __init__(self):
+        # utilizzo del dizionario dove inserire l'oggetto originale e la sua modifica, inizializzazione
+        self.dizionario_modifiche = {}
+        # slope inizializzazione
+        self.m = 0
+        # counter degli steps. E' un calcolo effettivo, cioe' quando c'e' il failed non aumenta l'indice, inizializzazione
+        self.stepsuMD = 1
+        # counter per gli i punti del plot finale, inizializzazione
+        self.counter_plot_step = 0
+        # valore di distanza del quinto punto per ogni log delle distanze ad ogni step(ultimo punto), inizializzazione
+        self.last_Distance = 0
+        # valore di distanza del quintp punto per ogni log delle distanze ad ogni step (m<0), inizializzazione
+        self.last_RightDistance = 0
+        # valore di elettrostatica del quinto punto per ogni log delle distanze ad ogni step (ultimo punto), inizializzazione
+        self.last_elec = 0
+        # valore di VdW del quinto punto per ogni log delle distanze ad ogni step (ultimo punto), inizializzazione
+        self.last_vdw = 0
+        # valore di ligand-interaction (ele+VdW) del quinto punto per ogni log delle distanze ad ogni step (ultimo punto), inizializzazione
+        self.last_ligint = 0
+        # counter per limitare gli step quando si e ' verificato un binding forte prolungato, inzializzazione
+        self.right_optimus = 0
+        # counter per limitare gli step quando si e' verificato un binding labile prolungato, inizializzazione
+        self.right_tricky = 0
+        # counter per limitare gli step quando si e' verifcato un non-binding o un meta-binding prolungato, inzializzazione
+        self.wrong_meta = 0
+        # counter per calcolo di failed per ogni step, inizializzazione
+        self.wrong = 1
+        # parameters terminal output
+        self.ParTerOut = ''
+
+        # funzione per uploadare path dei software da usare
+        self.acemd = ''
+        # self.vmd=''
+        # self.chimera=''
+        # self.wordom=''
+        #for line in open('%s/.suMDrc' % suMD_path):
+        for line in open(os.path.join(suMD_path, '.suMDrc')):
+            column = line.split('=')
+            if column[0] == 'Acemd':
+                self.acemd = column[1].replace('\n', '')
+
+    #	elif column[0] == 'Vmd':
+    #		self.vmd=column[1].replace('\n', '')
+    #	elif column[0] == 'Chimera':
+    #		self.chimera=column[1].replace('\n', '')
+    #	elif column[0] == 'Wordom':
+    #		self.wordom=column[1].replace('\n', '')
+
+    # Funzione che verifica se il restart sia possibile: Il Controllo e' eseguito andando a cercare se esistono e se sonoo vuoti i folder
+    def RestartDetection(self):
+        try:
+            # expdate = datetime(2018,12,11 )
+            #            now = datetime.now()
+            #            if expdate < now:
+            #                    sys.exit("license expired  :( ")
+
+            if os.listdir('./suMD-Simulation/Trajectories') != []:
+                print('\nsuMD simulation tries to Restart...\n\n\t...trajectory previously stored was found !!!\n')
+                print(self.ParTerOut)
+                self.mainoption = 'Restart'
+
+            else:
+                print('\nsuMD simulation tries to Restart...\n\n\t')
+                print(colorred.format('trajectory supposed to be stored not found !!!'))
+                print('\nPlease remove the "suMD-simulation" folder and run suMD again\n\n')
+                self.mainoption = 'New'
+        except OSError:
+            print('\nsuMD simulation tries to Initialize..\n\nStarting New suMD simulation\n\n')
+            print(self.ParTerOut)
+            self.mainoption = 'New'
+        if self.mainoption == 'Restart':
+            f = open('SUMD.log.tmp', 'w')
+            for line in open('./suMD-Simulation/SUMD.log'):
+                if line[0:8] == 'Step_num':
+                    checkslope = float(line.split()[2])
+                    checkdistance = float(line.split()[3])
+                    if checkslope < self.slopesel or checkdistance < float(self.Bound):
+                        self.last_RightDistance = float(line.split()[3])
+                        self.wrong_meta = int(line.split()[-1])
+                        self.right_tricky = int(line.split()[-2])
+                        self.right_optimus = int(line.split()[-3])
+                        self.stepsuMD = int(line.split()[1])
+            for line in open('./suMD-Simulation/SUMD.log'):
+                if line[0:8] == 'Step_num': #maicol ... problema con restart sopra i 100 step [0:7] ???
+                    checkstep = int(line.split()[1])
+                    if checkstep > self.stepsuMD:
+                        pass
+                    else:
+                        f.write(line)
+                else:
+                    f.write(line)
+            f.close()
+            os.system('mv SUMD.log.tmp ./suMD-Simulation/SUMD.log')
+            for line in open(selection):
+                colonna = line.split('=')
+                if colonna[0] == 'parameters':
+                    self.parameter = colonna[-1].replace('\n', '')
+            for line in reversed(open('./suMD-Simulation/Post-Analysis/energy_interaction.txt').readlines()):
+                self.counter_plot_step = int(line.split()[0]) + 1
+                break
+            os.system('rm ./suMD-Simulation/suMD-step*')
+
+            os.system('cp ./suMD-Simulation/Restart_files/tmp.vel ./suMD-Simulation/suMD-step{}.vel'.format(self.stepsuMD))
+            os.system(
+                'cp ./suMD-Simulation/Restart_files/tmp.coor ./suMD-Simulation/suMD-step{}.coor'.format(self.stepsuMD))
+            os.system('cp ./suMD-Simulation/Restart_files/tmp.xsc ./suMD-Simulation/suMD-step{}.xsc'.format(self.stepsuMD))
+
+    # Prepara il sistema estraendo le opzioni dal file selection.dat
+    def PrepInput(self):
+
+        for line in open(selection):
+            colonna = line.split('=')
+            if colonna[0] != 'ligand' and colonna[0] != 'ligand_cm' and colonna[0] != 'resid' and colonna[0] != 'randomize' \
+                    and colonna[0] != 'structure' and colonna[0] != 'n_device' and colonna[0] != 'timestep' \
+                    and colonna[0] != 'ForceField' and colonna[0] != 'constrain' and colonna[0] != 'n_steps' \
+                    and colonna[0] != 'slope' and colonna[0] != 'MaxFailed' and colonna[0] != 'parameters' \
+                    and colonna[0] != 'opt_dist' and colonna[0] != 'bound_dist' and colonna[0] != 'meta_dist' \
+                    and colonna[0] != 'main_chain' and colonna[0] != 'ligand_chain' \
+                    and '\n' not in line:
+                print(colorred.format('\nError Raised: Input file Not Valid\n\n'))
+                print('Please give a valid Input file (look at <Installed Path>/Examples/InputsuMD/selection.dat)')
+                sys.exit(0)
+            if colonna[0] == 'ligand':
+                self.ligand = colonna[1].replace('\n', '')
+            elif colonna[0] == 'main_chain':
+                self.main_ch = colonna[1].replace('\n', '')
+            elif colonna[0] == 'ligand_chain':
+                self.lig_ch = colonna[1].replace('\n', '')
+            elif colonna[0] == 'ligand_cm':
+                self.ligand_cm = colonna[1].replace('\n', '')
+            elif colonna[0] == 'resid':
+                self.residui = colonna[1].replace('\n', '')
+            elif colonna[0] == 'randomize':
+                self.randomoption = colonna[1].replace('\n', '')
+                if self.randomoption == 'yes':
+                    self.suMDtype = 'normal'
+                elif self.randomoption == 'no':
+                    self.suMDtype = 'norandom'
+            elif colonna[0] == 'structure':
+                self.pdb = colonna[1].replace('.pdb\n', '')
+                self.dizionario_modifiche['<name>'] = self.pdb
+            elif colonna[0] == 'n_device':
+                self.n_device = colonna[1].replace('\n', '')
+            elif colonna[0] == 'ForceField':
+                self.FF = colonna[1].replace('\n', '')
+            elif colonna[0] == 'constrain':
+                self.constrain = colonna[1].replace('\n', '')
+            elif colonna[0] == 'n_steps':
+                self.n_steps = str(colonna[1].replace('\n', ''))
+            elif colonna[0] == 'timestep':
+                self.timestep = str(colonna[1].replace('\n', ''))
+            elif colonna[0] == 'slope':
+                self.slopesel = float(colonna[1].replace('\n', ''))
+            elif colonna[0] == 'MaxFailed':
+                self.MaxFailed = int(colonna[1].replace('\n', ''))
+            elif colonna[0] == 'parameters':
+                self.parameter = colonna[1].replace('\n', '')
+            elif colonna[0] == 'opt_dist':
+                self.Opt = colonna[1].replace('\n', '')
+            elif colonna[0] == 'bound_dist':
+                self.Bound = colonna[1].replace('\n', '')
+            elif colonna[0] == 'meta_dist':
+                self.Meta = colonna[1].replace('\n', '')
+
+        self.ParTerOut = 'Parameters selected:\n\tstructure:      {}\n\tligand:         {}\n\tmain_chain:         {}\n\tligand_chain:          {}\n\tligand_cm:         {}\n' \
+                         '\tresid:       {}\n\trandomize:      {}\n\tForce Field:    {}\n\tn. device:      {}\n\tconstrain:      {}\n' \
+                         '\tn_steps      {}\n\tslope:          {}\n\tMaximum Failed: {}\n\tParameter file: {}\n'.format(
+        self.pdb, self.ligand, self.main_ch, self.lig_ch, self.ligand_cm, self.residui, self.randomoption, self.FF, self.n_device, self.constrain,
+        self.n_steps, self.slopesel, self.MaxFailed, self.parameter)
+
+    # funzione per lancio di acemd dove si esplicitano il device e quale input utilizzare
+    def Run_Acemd(self, n_device, Input_run):
+
+        os.system('{} --device {} {} > suMD-Simulation_step.log'.format(self.acemd, n_device, Input_run))
+
+    # funzione per calolo della pendenza m
+    def slope(self, fdistance):
+        diz_value = {}
+        counter = 0
+        f = open('Fitted-line.dat', 'w')
+        for line in open(fdistance):
+            diz_value[counter] = float(line.replace('\n', ''))
+            counter += 1
+        n_values = len(diz_value)
+        x_average = 0
+        y_average = 0
+        for item in diz_value:
+            x_average += item
+            y_average += diz_value[item]
+        x_average = float(x_average) / n_values
+        y_average = y_average / n_values
+        numeratore = 0
+        denominatore = 0
+        for item in diz_value:
+            numeratore += (item - x_average) * (diz_value[item] - y_average)
+            denominatore += (item - x_average) ** 2
+        m = numeratore / denominatore
+        f.write('m {}'.format(m))
+        f.close()
+
+        # os.system('%sutility/fit_straight.py %s' % (suMD_path, fdistance))
+
+        self.m = 0
+        for line in open('Fitted-line.dat'):
+            if line[0] == 'm':
+                self.m = float(line.split()[-1])
+                break
+
+            # funzione per l'estrapolazione dei 5 punti della distanza. Il calcolo dello step da considerare e' varaibile in base alla lunghezza dello step di dinamica
+
+    def LogDistanza(self, fdistance):
+        # self.dcd-mon=suMD-step%s.dcd
+        # os.system( '%sutility/suMD_monitor.py %s ../%s' %( suMD_path, dcd, selection))
+        # for line in open('suMD-Simulation_step.log'):
+        os.system('sed -e "/^#/d" -e "/^$/d" suMD-Simulation_step.log | tail -1 > last.dat')
+
+        for line in open('last.dat'):
+            self.last_elec = float(line.split()[5])
+            self.last_vdw = float(line.split()[6])
+            self.last_ligint = self.last_elec + self.last_vdw
+        # print "step %s %s" % (self.counter_step, line)
+
+        print("\nPoints detected:\n")
+        count = 1
+        for line in open(fdistance):
+            print("\t{}) {:6.2f}".format(count, float(line)))
+            count += 1
+        print("\n")
+        self.last_Distance = float(subprocess.check_output(['tail', '-1', fdistance]))
+
+    # funzione per estrarre  i valori di distanza e di ligand interaction
+    def PlotEnergeticDat(self):
+        #	if self.randomoption =='no':
+        #		self.counter_plot_step+=1
+        f = open('./Post-Analysis/energy_interaction.txt', 'a')
+        f.write('{:3}  {:8}  {:8}\n'.format(self.counter_plot_step, self.last_Distancelog, self.last_ligintlog))
+        f.close()
+        self.counter_plot_step += 1
+
+    # funzione per il recording della simulazione di suMD
+    def LogsuMD(self, fase):
+        self.mlog = '{:.3f}'.format(self.m)
+
+        self.last_Distancelog = '{:.3f}'.format(self.last_Distance)
+        self.last_eleclog = '{:.3f}'.format(self.last_elec)
+        self.last_vdwlog = '{:.3f}'.format(self.last_vdw)
+        self.last_ligintlog = '{:.3f}'.format(self.last_ligint)
+        self.wronglog = '{:3}'.format(self.wrong)
+        self.right_optimuslog = '{:2}'.format(self.right_optimus)
+        self.right_trickylog = '{:2}'.format(self.right_tricky)
+        self.wrong_metalog = '{:2}'.format(self.wrong_meta)
+        print("\n\t\t")
+        print(highgreen.format("Simulation Summary"))
+        print("\n\nStep n. {}:\n\ttry -->           {}\n\tDist.{} counter --> {}\n\tDist.{} counter --> {}\n"
+              "\tDist.{} counter --> {}\n\n".format(self.stepsuMD, self.wronglog, self.Meta, self.wrong_metalog,
+                                                    self.Bound, self.right_trickylog, self.Opt, self.right_optimuslog))
+        position_headerNum = 2 * ' ' + '0' + 3 * ' ' + '2' + 5 * ' ' + '5' + 7 * ' ' + '9' + 10 * ' ' + '15' + 8 * ' ' \
+                             + '20' + 8 * ' ' + '25' + 8 * ' ' + '30' + 8 * ' ' + '35' + 8 * ' ' + '40\n'
+        position_header = 2 * ' ' + '|' + 3 * ' ' + '|' + 5 * ' ' + '|' + 7 * ' ' + '|' + 11 * ' ' + '|' + 9 * ' ' \
+                          + '|' + 9 * ' ' + '|' + 9 * ' ' + '|' + 9 * ' ' + '|' + 9 * ' ' + '|'
+        position_body = 80 * ' '
+        if self.mainoption == 'New':
+            position_body = 80 * '?'
+        else:
+            position_body = '<' + (int((self.last_RightDistance * 2)) - 2) * '-' + 'L' + (
+                        80 - int(2 * self.last_RightDistance)) * ' '
+        if self.last_RightDistance < 0.5:
+            position_body = position_body.replace('<', '')
+        position_plot = '\n[@' + position_body + ' ]\n\n'
+        position_out = position_headerNum + position_header + position_plot
+        print(position_out)
+
+        f_log = open('SUMD.log', 'a')
+        if fase == 'randomized':
+            f_log.write('suMD_Step   Slope   Last_Distance Ele_Int. VdW_Int. Lig_Int. Try Dist.%s Dist.%s Dist.%s\n' % (
+            self.Opt, self.Bound, self.Meta))
+            self.steplog = 'Randomized'
+            f_log.write('%11s %7s %13s %8s %8s %8s %3s %6s %6s %6s\n' % (
+            self.steplog, self.mlog, self.last_Distancelog, self.last_eleclog, self.last_vdwlog, self.last_ligintlog,
+            self.wronglog, self.right_optimuslog, self.right_trickylog, self.wrong_metalog))
+        elif fase == 'norandom':
+            f_log.write('suMD_Step   Slope   Last_Distance Ele_Int. VdW_Int. Lig_Int. Try Dist.%s Dist.%s Dist.%s\n' % (
+            self.Opt, self.Bound, self.Meta))
+            f_log.write(22 * '-' + ' NO RANDOMIZATION SIMULATION APPLIED ' + 22 * '-' + '\n')
+        elif fase == 'attempting':
+            self.steplog = 'Attempting'
+            f_log.write('%11s %7s %13s %8s %8s %8s %3s %6s %6s %6s\n' % (
+            self.steplog, self.mlog, self.last_Distancelog, self.last_eleclog, self.last_vdwlog, self.last_ligintlog,
+            self.wronglog, self.right_optimuslog, self.right_trickylog, self.wrong_metalog))
+
+        elif fase == 'running':
+            self.steplog = 'Step_num%3s' % self.stepsuMD
+            f_log.write('%11s %7s %13s %8s %8s %8s %3s %6s %6s %6s\n' % (
+            self.steplog, self.mlog, self.last_Distancelog, self.last_eleclog, self.last_vdwlog, self.last_ligintlog,
+            self.wronglog, self.right_optimuslog, self.right_trickylog, self.wrong_metalog))
+        elif fase == 'error':
+            f_log.write(
+                'Too many failed for the same step . . .\n\t. . . suMD simulation stopped\nPlease prepare again the system or apply randomization')
+
+        elif fase == 'block':
+            f_log.write(
+                'Too many failed for the same step . . . %s\n\t. . . suMD simulation stopped\n\n' % (self.stepsuMD + 1))
+
+        elif fase == 'restart':
+            f_log.write(22 * '-' + ' RESTARTING SIMULATION from %s ' % (self.stepsuMD + 1) + 22 * '-' + '\n')
+        if fase == 'optimus':
+            f_log.write('Counter limit reached for Dist.%s . . .\n\t. . . suMD simulation stopped' % self.Opt)
+        if fase == 'tricky':
+            f_log.write('Counter limit reached for Dist.%s . . .\n\t. . . suMD simulation stopped' % self.Bound)
+        if fase == 'meta':
+            f_log.write('Counter limit reached for Dist.%s . . .\n\t. . . suMD simulation stopped\n\n' % self.Meta)
+
+        f_log.close()
+
+    # funzione per la gestione delle modifiche degli input in funzione delle variabili editate a terminale dall'utente es. pdb psf
+    def Configuration(self, Input_conf, Output_conf):
+        f = open(Input_conf, 'r').read()
+        for item in self.dizionario_modifiche:
+            f = f.replace(item, self.dizionario_modifiche[item])
+        fo = open(Output_conf, 'w')
+        fo.write(f)
+        print(f)
+        fo.close()
+
+    # funzione allocamento dei file per restart
+    def ArchiveRestart(self):
+        os.system('cp suMD-step%s.vel ./Restart_files/tmp.vel' % self.stepsuMD)
+        os.system('cp suMD-step%s.coor ./Restart_files/tmp.coor' % self.stepsuMD)
+        os.system('cp suMD-step%s.xsc ./Restart_files/tmp.xsc' % self.stepsuMD)
+
+    def Greatings(self):
+
+        greatings = "\n#################################################################\n\n"
+        print(greatings)
+
+
+# assegnazione di variabile il cui valore e' la classe stessa
+su = suMD()
+# try:
+#	os.system('rm .pid.txt')
+# except:
+##	pass
+# si utilizza il try cosi' in caso di errori o dimenticanze nella digitazione lo script non crasha ma motiva il suo non avvio
+print(header)
+try:
+    pid = os.getpid()
+    if len(sys.argv) == 3:
+        if sys.argv[2] == 'kill':
+            pid_string = ''
+            if os.path.exists('.pid.txt'):
+                print('\nActive or Stopped process found...\n\n')
+            else:
+                print(colorred.format('\nError Raised: None Active Process found\n\n'))
+            for line in open('.pid.txt'):
+                pid = line.replace('\n', '')
+            os.system('ps -ef | grep %s > LOGpid.tmp' % pid)
+
+            for line in open('LOGpid.tmp'):
+                column = line.split()
+                if column[2] == pid:
+                    pid_string += '%s ' % column[1]
+            os.system('ps -ef | grep %s > LOGpid.tmp' % pid_string)
+
+            for line in open('LOGpid.tmp'):
+                column = line.split()
+                if column[2] == pid_string.rstrip():
+                    pid_string += '%s ' % column[1]
+            pid_string += '%s' % pid
+            os.system('kill -9 %s' % pid_string)
+            os.system('rm LOGpid.tmp .pid.txt')
+            print('\nProcess killed/cleaned up !!!\n\n')
+        else:
+            print(colorred.format('\n\nError Raised: Argument "%s" not recognized !!!\n\n' % sys.argv[2]))
+            print('Please use argument "kill" to kill or clean up\n')
+        sys.exit(0)
+    # detect terminal input
+    selection = sys.argv[1]
+    fpidlog = open('.pid.txt', 'w')
+    fpidlog.write('%s' % pid)
+    fpidlog.close()
+    # detect if restart is possible
+    su.PrepInput()
+    su.RestartDetection()
+    # Permette la selezione del parameter file dalla cartella parameters presente in suMD.
+    if su.mainoption == 'New':
+        box = ''
+        for line in reversed(open('%s.xsc' % su.pdb).readlines()):
+            column = line.split()
+            box = '%s %s %s' % (column[1], column[5], column[9])          # conformato a acemd3
+            break
+        su.dizionario_modifiche['xyz'] = box                              # conformato a acemd3
+        # Crea la cartella di lavoro e relative sottocartelle
+
+        os.system('mkdir suMD-Simulation')
+        os.system('mkdir suMD-Simulation/Trajectories')
+        os.system('mkdir suMD-Simulation/Post-Analysis')
+        os.system('mkdir suMD-Simulation/Restart_files')
+        os.system('cp %s.* ./suMD-Simulation' % su.pdb)
+
+    su.dizionario_modifiche['<name_p>'] = '../%s' % (su.parameter)
+    su.dizionario_modifiche['functions.tcl'] = os.path.join(suMD_path, 'utility/functions.tcl')#'%sutility/functions.tcl' % suMD_path
+    su.dizionario_modifiche['<numstep>'] = su.n_steps
+    su.dizionario_modifiche['<timestep>'] = su.timestep
+
+    if su.randomoption == 'yes' and su.mainoption == 'New':
+        # Edita l'input di run
+        su.Configuration(os.path.join(suMD_path, 'protocols/input_start_{}_{}.bk'.format( su.FF, su.suMDtype)) ,
+                         './suMD-Simulation/input_start_%s_%s' % (su.FF, su.suMDtype))
+        #su.Configuration('%sprotocols/input_start_%s_%s.bk' % (suMD_path, su.FF, su.suMDtype),
+        #                 './suMD-Simulation/input_start_%s_%s' % (su.FF, su.suMDtype))
+        os.chdir('./suMD-Simulation')
+        print("\nRandomization step running . . .\n\n")
+        su.Run_Acemd(su.n_device, 'input_start_%s_%s' % (su.FF, su.suMDtype))
+        os.system('mv output.coor suMD-step%s.coor' % su.stepsuMD)     # @maicol & giovanni - rename bincoor - acemd3
+        os.system('mv output.vel suMD-step%s.vel' % su.stepsuMD)       # @maicol & giovanni - rename binvel - acemd3
+        os.system('mv output.xsc suMD-step%s.xsc' % su.stepsuMD)       # @maicol & giovanni - rname xsc - acemd3
+        # Estrapola distanze, fitta retta e ne estrae la m
+        MonitorRandom = monitor(1, ('../' + selection))
+        MonitorRandom.ANA('randomized.dcd', 'randomized')
+        su.LogDistanza('Distance-random.dat')
+        su.slope('Distance-random.dat')
+        print("\nIgnored tabu-like supervision !!!\n\n")
+        su.LogsuMD('randomized')
+        os.system('mv randomized.dcd ./Trajectories')
+        su.PlotEnergeticDat()
+    elif su.randomoption == 'no' and su.mainoption == 'New':
+        os.chdir('./suMD-Simulation')
+        su.LogsuMD('norandom')
+
+    # Inzio del vero loop di suMD
+    # Primo mini loop in caso la randomizzazione portasse a un non ritorno
+    i = 1
+    if su.mainoption == 'Restart':
+        i = su.MaxFailed
+        os.chdir('./suMD-Simulation')
+        su.LogsuMD('restart')
+    while i < su.MaxFailed:
+        if i == 1:
+            print("\nFirst suMD Loop running . . . (Attempting Loop)\n\n")
+        print('\t. . . Attempting step as try {}\n\n'.format(i))
+        if su.randomoption == 'yes':
+            su.dizionario_modifiche['input_name'] = 'randomized'
+            su.dizionario_modifiche['output_name'] = 'suMD-step1'
+            su.Configuration(os.path.join(suMD_path, 'protocols/input_go_{}_{}.bk'.format(su.FF, su.suMDtype)),
+                             'input_go_{}_{}'.format(su.FF, su.suMDtype))
+            #su.Configuration('%sprotocols/input_go_%s_%s.bk' % (suMD_path, su.FF, su.suMDtype),
+            #                 'input_go_%s_%s' % (su.FF, su.suMDtype))
+            su.Run_Acemd(su.n_device, 'input_go_{}_{}'.format(su.FF, su.suMDtype))
+            os.system('mv output.coor suMD-step%s.coor' % su.stepsuMD)     # @maicol & giovanni - rename bincoor - acemd3
+            os.system('mv output.vel suMD-step%s.vel' % su.stepsuMD)       # @maicol & giovanni - rename binvel - acemd3
+            os.system('mv output.xsc suMD-step%s.xsc' % su.stepsuMD)       # @maicol & giovanni - rname xsc - acemd3
+
+        elif su.randomoption == 'no':
+            su.Configuration(os.path.join(suMD_path, 'protocols/input_start_{}_{}.bk'.format(su.FF, su.suMDtype)),
+                             'input_start_{}_{}'.format(su.FF, su.suMDtype))
+            #su.Configuration('%sprotocols/input_start_%s_%s.bk' % (suMD_path, su.FF, su.suMDtype),
+            #                 'input_start_%s_%s' % (su.FF, su.suMDtype))
+            su.Run_Acemd(su.n_device, 'input_start_{}_{}'.format(su.FF, su.suMDtype))
+            os.system('mv output.coor suMD-step%s.coor' % su.stepsuMD)     # @maicol & giovanni - rename bincoor - acemd3
+            os.system('mv output.vel suMD-step%s.vel' % su.stepsuMD)       # @maicol & giovanni - rename binvel - acemd3
+            os.system('mv output.xsc suMD-step%s.xsc' % su.stepsuMD)       # @maicol & giovanni - rname xsc - acemd3
+
+        Monitor1 = monitor(su.stepsuMD, ('../' + selection))
+        Monitor1.ANA('suMD-step{}.dcd'.format(su.stepsuMD), 'attempting')
+        su.LogDistanza('Distance-step1.dat')
+        su.slope('Distance-step1.dat')
+        if su.m < su.slopesel:
+            su.LogsuMD('attempting')
+            print("\nSlope {:.2f} < 0\nsuMD simulation goes to Main Loop \n\n".format(su.m))
+            su.PlotEnergeticDat()
+            su.last_RightDistance = su.last_Distance
+            su.wrong = 1
+            os.system('mv suMD-step1.dcd ./Trajectories')
+            su.ArchiveRestart()
+            i = su.MaxFailed + 1
+        else:
+            su.LogsuMD('attempting')
+            print("\nSlope {:.2f} > 0\nsuMD simulation start again from Attempting\n\n".format(su.m))
+            su.wrong += 1
+            os.system('rm suMD-step1*')
+        i += 1
+        if i == su.MaxFailed:
+            if su.randomoption == 'yes':
+                print('\nToo many failed for the same step . . .\n\t. . . suMD simulation start again from randomize step\n\n')
+                su.Run_Acemd(su.n_device, 'input_start_{}_{}'.format(su.FF, su.suMDtype))
+                os.system('mv output.coor suMD-step%s.coor' % su.stepsuMD)     # @maicol & giovanni - rename bincoor - acemd3
+                os.system('mv output.vel suMD-step%s.vel' % su.stepsuMD)       # @maicol & giovanni - rename binvel - acemd3
+                os.system('mv output.xsc suMD-step%s.xsc' % su.stepsuMD)       # @maicol & giovanni - rname xsc - acemd3
+                i = 1
+            elif su.randomoption == 'no':
+                su.LogsuMD('error')
+
+                print('\nToo many failed for the same step . . .\n\t. . . suMD simulation stopped\n')
+                print(colorred.format('Please prepare again the system or apply randomization\n\n'))
+                su.stepsuMD = 171
+                su.Greatings()
+
+    while su.stepsuMD < 85: #### maximum number of steps (mpavan)
+
+        if su.stepsuMD == 1:
+            print("\nMain suMD Loop running . . . \n")
+        print("\t. . . Running step {} as try {}\n\n".format(su.stepsuMD + 1, su.wrong))
+        # print 'Calculating step ... %s\n\n' % (su.stepsuMD + 1)
+        su.dizionario_modifiche['input_name'] = 'suMD-step{}'.format(su.stepsuMD)
+        su.dizionario_modifiche['output_name'] = 'suMD-step{}'.format(su.stepsuMD + 1)
+        su.Configuration( os.path.join(suMD_path, 'protocols/input_go_{}_{}.bk'.format(su.FF, su.suMDtype)),
+                                       'input_go_{}_{}'.format(su.FF, su.suMDtype))
+
+        #su.Configuration('%sprotocols/input_go_%s_%s.bk' % (suMD_path, su.FF, su.suMDtype),
+        #                 'input_go_%s_%s' % (su.FF, su.suMDtype))
+        print(su.dizionario_modifiche)
+        su.Run_Acemd(su.n_device, 'input_go_{}_{}'.format(su.FF, su.suMDtype))
+        os.system('mv output.coor suMD-step{}.coor'.format(su.stepsuMD +1))     # @maicol & giovanni - rename bincoor - acemd3
+        os.system('mv output.vel suMD-step{}.vel'.format(su.stepsuMD +1))       # @maicol & giovanni - rename binvel - acemd3
+        os.system('mv output.xsc suMD-step{}.xsc'.format(su.stepsuMD +1))       # @maicol & giovanni - rname xsc - acemd3
+        MonitorStep = monitor(su.stepsuMD, ('../' + selection))
+        MonitorStep.ANA('suMD-step{}.dcd'.format(su.stepsuMD + 1), 'run')
+        su.LogDistanza('Distance-step{}.dat'.format(su.stepsuMD + 1))
+        su.slope('Distance-step{}.dat'.format(su.stepsuMD + 1))
+        if su.last_Distance < float(su.Bound):
+            su.last_RightDistance = su.last_Distance
+            os.system('rm suMD-step{}*'.format(su.stepsuMD))
+            su.stepsuMD += 1
+            su.ArchiveRestart()
+            os.system('mv suMD-step{}.dcd ./Trajectories'.format(su.stepsuMD))
+            if su.last_Distance < float(su.Opt):
+                su.right_optimus += 1
+                su.LogsuMD('running')
+                print("\nDistance {} < {} --> Ignored tabu-like supervision . . .\n\t. . . special --> "
+                      "Added 1 unit to Dist.{} counter !!\nsuMD simulation goes to  step {}\n\n".format(su.last_Distance,
+                       su.Bound, su.Opt, su.stepsuMD + 1))
+            else:
+                su.right_tricky += 1
+                su.LogsuMD('running')
+                print("\nDistance {} < {} --> Ignored tabu-like supervision . . .\n\t. . . special --> Added 1 unit to "
+                      "Dist.{} counter !!\nsuMD simulation goes to  step {}\n\n".format(su.last_Distance, su.Bound,
+                                                                                        su.Bound, su.stepsuMD + 1))
+            su.wrong = 1
+            su.PlotEnergeticDat()
+
+        elif su.m < su.slopesel:
+            #
+            print("\nSlope {:.2f} < 0".format(su.m))
+            if su.last_Distance < float(su.Meta):
+                print("\nDistance {}  < {} . . .\n\t. . .special --> Added 1 unit to Dist.{} counter !!".format(
+                su.last_Distance, su.Meta, su.Meta))
+                su.wrong_meta += 1
+            su.last_RightDistance = su.last_Distance
+            os.system('rm suMD-step{}*'.format(su.stepsuMD))
+            su.stepsuMD += 1
+            su.ArchiveRestart()
+            os.system('mv suMD-step{}.dcd ./Trajectories'.format(su.stepsuMD))
+            su.LogsuMD('running')
+            print("\nsuMD simulation goes to step {}\n\n".format(su.stepsuMD + 1))
+            su.wrong = 1
+            su.PlotEnergeticDat()
+        else:
+            su.stepsuMD += 1
+            su.LogsuMD('running')
+            print("\nSlope {:.2f} > 0\nsuMD simulation start again from step {}\n\n".format(su.m, su.stepsuMD))
+            os.system('rm suMD-step{}*'.format(su.stepsuMD))
+            su.wrong += 1
+            su.stepsuMD -= 1
+            if su.wrong == su.MaxFailed + 1:
+                su.LogsuMD('block')
+                print("\nToo many failed for the same step . . . {}\n\t. . . suMD simulation stopped\n\n".format(
+                            su.stepsuMD + 1))
+                su.Greatings()
+                break
+
+        if su.right_optimus == 30:
+            su.LogsuMD('optimus')
+
+            print('\nCounter limit reached for Dist.{} . . .\n\t. . . suMD simulation stopped\n\n'.format(su.Opt))
+            su.Greatings()
+            break
+        elif su.right_tricky == 30:
+            su.LogsuMD('tricky')
+            print('\nCounter limit reached for Dist.%s . . .\n\t. . . suMD simulation stopped\n\n' % su.Bound)
+            su.Greatings()
+            break
+        elif su.wrong_meta == 37:
+            su.LogsuMD('meta')
+
+            print('\nCounter limit reached for Dist.%s . . .\n\t. . . suMD simulation stopped\n\n' % su.Meta)
+            su.Greatings()
+            break
+
+
+
+except IndexError:
+    print(colorred.format('\nError Raised: No Input file specified\n\n'))
+    print('Please give a valid input file "selection.dat" (look at <Installed Path>/Examples/InputsuMD)')
