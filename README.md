@@ -16,7 +16,8 @@ event. As rule of thumb, we suggest to place the ligand in a random conformation
 SuMD requires a **configuration file** (here named **“inputfile.dat”**) organized in three major sections containing information about (i) the system, (ii) the supervision procedure, and (iii) the simulation settings. **An explanation on each required parameter to run the simulation is provided in the inputfile_commented.dat file.**  
 **N.B.**: in order to launch the simulation, **the pdb file containing the coordinates the input coordinates for the system to be simulated, a prmtop/psf file containing the corrispondent topology, and an xsc file containing the box dimension should be provided. The topology and box dimension file MUST have the same basename as the pdb file.** In the case you choose CHARMM as force field, a combined prm/par file containing all the parameters needed to describe the system must also be provided and indicated in the input file under the parameter flag.
 
-The current version of the code only supports the **ACEMD3 engine** to run molecular dynamics simulations. All Python libraries required to successfully run the code are embedded into a YAML file ('sumd.yml') that can be used to reconstitute the right Python virtual environment through the conda package manager.
+The current version of the code only supports the **ACEMD3 engine** to run molecular dynamics simulations. All Python libraries required to successfully run the code are embedded into a YAML file ('sumd.yml') that can be used to reconstitute the right Python virtual environment through the conda package manager.  
+**N.B.**: a dot file ('.suMDrc') is present in the directory. In this file you can specify the path to the acemd3 executable that you want to use. For most users, anyway, the default path should be fine.
 
 To reconstitute the right Python virtual environment:
 - **conda create -f sumd.yml**  
