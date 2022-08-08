@@ -1,0 +1,30 @@
+#### SYSTEM SETTINGS
+
+structure=sumd.pdb
+parameters=sumd.prmtop
+ForceField=AMBER
+#non_prot_AA=SAR             
+
+#### SUPERVISION SETTINGS
+
+#RECEPTOR
+main_chain=protein                                 
+resid=28 54 85 88 104 105 106 107 108 120 121 123
+
+#LIGAND
+ligand=nucleic    
+ligand_chain=nucleic
+ligand_cm=resid 134 136 137 146 147 154 156 157 158
+
+randomize=no
+constrain=no
+slope=0.00             
+
+#### SIMULATION SETTINGS
+n_device=0              
+n_steps=150000
+timestep=2
+MaxFailed=17
+opt_dist=5
+bound_dist=10
+meta_dist=15

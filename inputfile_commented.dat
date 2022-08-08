@@ -1,0 +1,30 @@
+#### SYSTEM SETTINGS
+
+structure=sumd.pdb          #pdb file name assigned to the last frame of equilibration (psf or prmtop; xsc must the same root name)
+parameters=sumd.prmtop      #parameter file (only needed for CHARMM simulations)
+ForceField=AMBER            #force field used in the simulation, AMBER or CHARMM
+#non_prot_AA=SAR             #OPZ. report here non-standard residues (this line can be present several times)
+
+#### SUPERVISION SETTINGS
+
+#RECEPTOR
+main_chain=protein                                   #VMD style definition of the receptor chain
+resid=28 54 85 88 104 105 106 107 108 120 121 123    #VMD style definition of the binding site
+
+#LIGAND
+ligan=nucleic                                        #VMD style definition of the ligand chain   
+ligand_chain=nucleic                                 #VMD style definition of the ligand chain
+ligand_cm=resid 134 136 137 146 147 154 156 157 158  #VMD style definition of the ligand binding residues (may coincide with ligand_chain)
+
+randomize=no             #perform randomization step (classical non-supervised MD) before run : yes/no
+constrain=no             #experimental: don't change
+slope=0.00               #fixed: don't change
+
+#### SIMULATION SETTINGS
+n_device=0               #GPU device ID-number (similar to ​ acemd3 --device command, leave 0 if you use an unlicensed version of ACEMD3)
+n_steps=150000           #classical MD steps for each supervised one
+timestep=2               #integration timestep for MD simulations
+MaxFailed=17             #maximum number of consecutive failed attempts
+opt_dist=5               #cdm distance cutoff n°1, see references
+bound_dist=10            #cdm distance cutoff n°2, see references
+meta_dist=15             #cdm distance cutoff n°3, see references
