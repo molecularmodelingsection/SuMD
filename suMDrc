@@ -1,0 +1,5 @@
+Chimera=/odex/chimera-1.9-linux_x86_64/bin/chimera
+Vmd=vmd-1.9.2a39
+Wordom=wordom-0.22
+#Acemd=/usr/local/acemd-3212u1/bin/acemd.release.3212u1
+Acemd=acemd3
