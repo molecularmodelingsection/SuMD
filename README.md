@@ -29,6 +29,6 @@ In case you prefer to reconstuct it manually:
 To run the code:
 1. open a terminal within the directory of interest
 2. activate the right conda environment (**conda activate sumd**)
-3. run the code (**python3 /PATH/TO/SUMD_DIRECTORY/suMD.py inputfile.dat**)
+3. run the code (**python3 /PATH/TO/SUMD_DIRECTORY/suMD inputfile.dat**)
 
 To test the code, an example system is provided in the **test** directory.
