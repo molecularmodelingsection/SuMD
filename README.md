@@ -14,11 +14,11 @@ SuMD simulations can be performed starting from a pre-equilibrated system in whi
 event. As rule of thumb, we suggest to place the ligand in a random conformation, in a range of 30-70 Å. Two different force field are supported to run the simulation, AMBER and CHARMM.  
 
 SuMD requires a **configuration file** (here named **“inputfile.dat”**) organized in three major sections containing information about (i) the system, (ii) the supervision procedure, and (iii) the simulation settings. **An explanation on each required parameter to run the simulation is provided in the inputfile_commented.dat file.**  
-**N.B.**: in order to launch the simulation, **the pdb file containing the coordinates the input coordinates for the system to be simulated, a prmtop/psf file containing the corrispondent topology, an xsc file containing the box dimension should be provided. The topology and box dimension file MUST have the same basename as the pdb file.** In the case you choose CHARMM as force field, a combined prm/par file containing all the parameters needed to describe the system must also be provided and indicated in the input file under the parameter flag.
+**N.B.**: in order to launch the simulation, **the pdb file containing the coordinates the input coordinates for the system to be simulated, a prmtop/psf file containing the corrispondent topology, and an xsc file containing the box dimension should be provided. The topology and box dimension file MUST have the same basename as the pdb file.** In the case you choose CHARMM as force field, a combined prm/par file containing all the parameters needed to describe the system must also be provided and indicated in the input file under the parameter flag.
 
 The current version of the code only supports the **ACEMD3 engine** to run molecular dynamics simulations. All Python libraries required to successfully run the code are embedded into a YAML file ('sumd.yml') that can be used to reconstitute the right Python virtual environment through the conda package manager.
 To reconstitute the right Python virtual environment:
-- **conda create -f sumd.yml**
+- **conda create -f sumd.yml**  
 In case you prefer to reconstuct it manually:
 1. conda create -n sumd
 2. conda install -c conda-forge prody
