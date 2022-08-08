@@ -3,7 +3,7 @@ Python code to run Supervised Molecular Dynamics (SuMD) simulations
 
 Reference publication:  
 **"Investigating RNA-Protein Recognition Mechanisms through Supervised Molecular Dynamics (SuMD) Simulations."**  
-Pavan M., Bassani D., Sturlese M., Moro S. (under peer review at *NAR Bionformatics and Genomics*)
+Pavan M., Bassani D., Sturlese M., Moro S. (under peer review at *NAR Genomics and Bioinformatics*)
 
 SuMD is a Python code that can be utilized to perform Supervised Molecular Dynamics simulations. The algorithm is deeply explained is the works of Sabbadin et. al (2014)<sup>1</sup>, Cuzzolin et. al (2016)<sup>2</sup> and Salmaso et al. (2017)<sup>3</sup>, other than in the reference publication.
 1. Sabbadin, D.; Moro, S. Supervised Molecular Dynamics (SuMD) as a Helpful Tool to Depict GPCR-Ligand Recognition Pathway in a Nanosecond Time Scale. J. Chem. Inf. Model. 2014, 54, 372–376.
