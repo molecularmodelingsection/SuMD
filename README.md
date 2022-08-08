@@ -2,7 +2,7 @@
 Python code to run Supervised Molecular Dynamics (SuMD) simulations
 
 Reference publication:
-**"Investigating RNA-Protein Recognition Mechanisms through Supervised Molecular Dynamics (SuMD) Simulations."**
+**"Investigating RNA-Protein Recognition Mechanisms through Supervised Molecular Dynamics (SuMD) Simulations."**  
 Pavan M., Bassani D., Sturlese M., Moro S. (under peer review at *NAR Bionformatics and Genomics*)
 
 SuMD is a Python code that can be utilized to perform Supervised Molecular Dynamics simulations. The algorithm is deeply explained is the works of Sabbadin et. al (2014)<sup>1</sup>, Cuzzolin et. al (2016)<sup>2</sup> and Salmaso et al. (2017)<sup>3</sup>, other than in the reference publication.
@@ -20,6 +20,7 @@ The current version of the code only supports the **ACEMD3 engine** to run molec
 
 To reconstitute the right Python virtual environment:
 - **conda create -f sumd.yml**  
+
 In case you prefer to reconstuct it manually:
 1. conda create -n sumd
 2. conda install -c conda-forge prody
