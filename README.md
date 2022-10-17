@@ -1,5 +1,5 @@
 # SuMD
-Python code to run Supervised Molecular Dynamics (SuMD) simulations
+Python code to run Supervised Molecular Dynamics (SuMD) simulations  
 N.B.: the Python code to analyze SuMD trajectories can be found at github.com/molecularmodelingsection/SuMD-analyzer
 
 Reference publication:  
