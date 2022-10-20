@@ -1,48 +1,25 @@
-set numSteps   <numstep>
-set structure  <name>
-set inputname  input_name
-set parameters <name_p>
-set outputname  output_name
+## editable input
+parameters              <name_p> 
+structure               <name>.psf
+coordinates             <name>.pdb
+temperature             310
+run                     <numstep>
 
-# Pulling time 3 ns 
-structure       $structure.psf
-coordinates     $structure.pdb
-restart on
-restartfreq 50000
-restartname    $outputname.restart
+## thermostat
+thermostat              on
+thermostatTemperature   310
+thermostatDamping       0.1
 
-bincoordinates $inputname.coor
-binvelocities $inputname.vel
-extendedsystem $inputname.xsc
-
-
-timestep        <timestep>
-rigidbonds	    all
-hydrogenscale   4
-
-langevin	    on
-langevintemp	310	
-langevindamping	0.1
-
-parameters      $parameters
-
-outputname      $outputname
-dcdfreq         1000
-dcdfile         $outputname.dcd
-
-switching       on
-switchdist      7.5
-cutoff          9
-exclude         scaled1-4
-1-4scaling      1.0
-
-pme on
-
-energyfreq	1000
-
-
-set logfreq 1000
-
-run $numSteps
-
-
+## fixed parameters
+boxSize                 xyz
+binCoordinates          input_name.coor
+binVelocities           input_name.vel
+extendedSystem          input_name.xsc
+timestep                <timestep>
+#restart                 on
+PME                     on
+cutoff                  9.0
+switching               on
+switchDistance          7.5
+trajectoryPeriod        10000
+trajectoryFile          output_name.dcd
