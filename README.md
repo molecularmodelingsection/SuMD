@@ -24,9 +24,10 @@ To reconstitute the right Python virtual environment:
 - **conda create -f sumd.yml**  
 
 In case you prefer to reconstuct it manually:
-1. conda create -n sumd
-2. conda install -c conda-forge prody
-3. conda install -c conda-forge -c acellera acemd3=3.5
+1. conda create -n sumd python==3.10  
+2. conda activate sumd  
+3. conda install -c conda-forge prody
+4. conda install -c conda-forge -c acellera acemd
 
 To run the code:
 1. open a terminal within the directory of interest
