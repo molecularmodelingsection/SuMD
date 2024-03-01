@@ -1,47 +1,15 @@
-                            ####################################################
-                            #        ACEMD3 Production - AMBER (maicol)        #
-                            ####################################################
-
-
-
-                                     ## DEFINITION OF INITIAL STATES ##
-
-
-parmfile                <name_p>                                   # For AMBER, it specified parameters and system topology
-coordinates             <name>.pdb                                 # Initial system coordinates
-
+parmfile                <name_p>
+coordinates             <name>.pdb
 boxSize                 xyz
-
-temperature             310                                        # Temperature for the generation of initial system velocity
-
-
-
-
-
-                                             ## MD SETTING ##
-
-
+temperature             310
 timestep                <timestep>
-thermostat              on                                         # Enable Langevin thermostat
+thermostat              on
 thermostatTemperature   310
-thermostatDamping       0.1                                        # Damping constant of the thermostat
-
-run                     <numstep>                                  # Lenght of simulations: it can be specified in simulation steps or time using suffices (us, ns, ps, and fs)
-
-
-
-
-                                            ## ITERACTIONS ##
-
-
-PME                    on                                         # Enable the particle-mesh Ewald summation for electrostatic interactions
-cutoff                 9.0                                        # Cutoff distance for van der Waals interactions and real-space electrostatic interactions
-switching              on                                         # Enable a switching function for van der Waals interactions
-switchDistance         7.5                                        # Cutoff of the switching function
-
-
-
-                                              ## OUTPUTS ##
-
+thermostatDamping       0.1
+run                     <numstep>
+PME                    on
+cutoff                 9.0
+switching              on
+switchDistance         7.5
 trajectoryFile        randomized.dcd
 trajectoryPeriod      10000
