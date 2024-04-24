@@ -34,4 +34,10 @@ To run the code:
 2. activate the right conda environment (**conda activate sumd**)
 3. run the code (**python3 /PATH/TO/SUMD_DIRECTORY/suMD inputfile.dat**)
 
-To test the code, an example system is provided in the **test** directory.
+To test the code, an example system is provided in the **test** directory.  
+
+Latest **cool applications** of the SuMD code:
+- SuMD for fragment screening https://doi.org/10.1080/14756366.2020.1838499
+- SuMD for accurate fragment posing https://doi.org/10.1007/s10822-022-00452-7
+- A scoring function for SuMD https://doi.org/10.1002/jcc.27370  
+  
